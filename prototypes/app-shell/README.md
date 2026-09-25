@@ -1,24 +1,37 @@
 # Prototype: app shell (throwaway)
 
-**Question:** what should Terpsicle v2 feel like to use, and which layout makes it work?
+## Round 2 (current)
 
-Four structurally different variants share one mock UMD dataset and in-memory state:
+**Question:** in the Workbench layout, *where should details open* so people always know where to look?
 
-| Key | Name | Idea |
+Everything is shared except that one decision:
+
+| # | Name | Details open… |
 |---|---|---|
-| A | Workbench | Linear-style three panes: tool rail + panel, calendar, inspector |
-| B | Canvas | The calendar is the whole app; search, cart, problems and map float over it |
-| C | Catalog | Browse first; every section says whether it fits your week (time *and* walking) |
-| D | Generate | Describe the week you want, then flip through ranked schedules with j/k |
+| 1 | Drill in | inside the left sidebar, replacing the list, with a Back button (only a left sidebar) |
+| 2 | Side by side | in a second column next to the list you came from |
+| 3 | On the right | in a right panel that exists only while you're looking at something |
+| 4 | Pop over | in a card floating next to whatever you clicked |
+
+Shared, based on round-1 feedback:
+- plans in the top bar (rename, duplicate, delete, undo);
+- labeled tabs (Plan, Search, Problems, Travel, Blocks, Export);
+- travel time instead of walking, with pace, step-free and buffer settings and the math shown;
+- every section says whether it fits;
+- simpler seats and grades;
+- tooltips that reveal shortcuts;
+- no command palette and no natural-language input.
+
+Round 1 (four whole-app layouts: Workbench, Canvas, Catalog, Generate) is in commit `77d0e9c`. Workbench won.
 
 ```sh
 npm install
-npm run dev        # open http://localhost:5173/#A  (or ?variant=B)
+npm run dev        # http://localhost:5173/#1  (or ?variant=3)
 npm run build      # dist/index.html (single file) + dist/artifact.html
 ```
 
-Switch variants with the floating bar or ←/→. ⌘K opens the command palette everywhere.
+Switch variants with the floating bar or ←/→.
 
-Everything here is mock data. Course codes, gen-eds and buildings are real UMD ones; instructors, ratings, reviews, seats and grades are made up. Walking uses straight-line distance × 1.35 in place of the UMD GIS walking matrix.
+Everything here is mock data. Course codes, gen-eds and buildings are real UMD ones; instructors, ratings, reviews, seats and grades are made up. Travel time uses straight-line distance × 1.35 in place of the UMD GIS matrix.
 
-`src/core.ts` holds the pure logic (walk legs, problems, search, generator) that would move into `packages/core`. The rest is throwaway.
+`src/core.ts` is the pure logic (connections, problems, fit, search) that would move into `packages/core`. The rest is throwaway.

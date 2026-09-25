@@ -43,9 +43,8 @@ Matching Jupiterp isn't enough. We win on:
 | **Walking** | Real campus routing from UMD's own GIS network, including an accessible (step-free) mode, drawn between classes and used by the generator | Nobody at UMD does this well |
 | **Problems panel** | A linter for your schedule: overlaps, walks, seats, restrictions, final exams, credit load | Scattered or missing |
 | **Registration day** | Near-live seats, fill-speed history, Plan B that shares as many sections as possible with Plan A, one-click copy of section codes, seat alerts | Partial (Coursicle charges for alerts) |
-| **UX** | ⌘K for everything, hover ghosts, click-to-swap sections, j/k through generated results | Mouse-driven, dated |
+| **UX** | Every section of a course shown on the calendar at once, click one to switch; one obvious place for each kind of information; undo instead of "are you sure?" | Hover lists, scattered info, dated |
 | **Final exams** | Exam-clash detection from registrar data | Nobody |
-| **Natural language** | "No classes before 10, Fridays off, at most one walk under 10 minutes" becomes editable constraint chips | Nobody at UMD |
 
 **Decided:** we use no Jupiterp data or code; everything comes from our own scrapers. PlanetTerp is fine to use (ratings, reviews, grades).
 
@@ -56,23 +55,36 @@ Matching Jupiterp isn't enough. We win on:
 Section IDs (F1, F2, …) are referenced by the roadmap in §8.
 
 ### F1. Core builder
-- **Layout: three panes, Linear style.**
-  - **Left:** an icon rail that expands into panels (the "sidebar tabs" from the original doc): Search, Schedules, Blocks, Generate, Problems, Map, Export.
-  - **Center:** the week calendar.
-  - **Right:** an inspector for the selected course, section or professor. It slides in and closes with Esc.
-- **Search.**
-  - Fuzzy and typo-tolerant: `cmsc 351`, `algorithms`, `@kruskal`.
-  - Filter syntax that also appears as chips: `gened:DSSP`, `credits:3`, `days:TuTh`, `after:10am`, `open`, `level:300`, `dept:ENGL`.
-  - Results are virtualized and stream as you type.
-- **Hover ghosts.** Hovering any section in search shows it translucent on the calendar. It turns red if it would overlap and shows a walking badge if the walk would be tight.
-- **Click-to-swap.** Clicking a class on the calendar shows every other section of that course as ghosts; click one to swap. This is the most-used interaction, so it has to feel great.
-- **Custom blocks.** Work, gym, lunch, "don't touch". Blocks can have a **location**, such as "Lunch at Stamp" or "Dorm: Oakland Hall", so walking checks include them.
-- **Schedules.** Many named schedules per term. Duplicate, rename, star one as primary, and set Plan A, B and C.
-- **Favorites / shopping cart.** Courses you're considering but haven't placed. The generator uses these as its input.
-- **Context menu and keyboard.** Right-click any block (lock, swap, remove, view professor, copy code) and use the same actions from the keyboard.
-- **Always-visible header stats:** credits, days on campus, earliest start and latest end, total walking.
+**Principle: one home for each kind of information, and one way to open things.** Round one of the prototype showed the same course info in three places, and people couldn't tell where to look. So:
 
-### F2. Walking (flagship)
+| You want to… | It lives in | Opened by |
+|---|---|---|
+| See your week | The calendar (always visible) | – |
+| Manage plans (new, rename, duplicate, delete) | Plan tabs in the top bar | – |
+| See what's in this plan, and courses saved for later | **Plan** tab | `1` |
+| Find a course | **Search** tab | `2` or `/` |
+| Know what's wrong | **Problems** tab (count also in the top bar) | `3` |
+| Travel time settings and connections | **Travel** tab | `4` |
+| Keep time free | **Blocks** tab | `5` |
+| Get your plan out | **Export** tab | `6` |
+| Everything about one course (sections, instructors, grades, description) | **Course details**, one place only | Clicking the course *anywhere*: calendar, plan list, search result, problem |
+| Everything about one connection between classes | **Connection details** | Clicking a travel pill, a Travel row or a problem |
+
+Where "details" open is the open design question (see `prototypes/app-shell`, round 2: drill in, side by side, on the right, pop over). Everything else above is settled.
+
+- **Layout:** top bar with plans · labeled left rail (icon + word, not icons alone) · one sidebar panel · calendar. No permanent right panel.
+- **Plans** (the name stuck): tabs in the top bar; double-click to rename; a menu for rename, duplicate and delete; `+` for a new empty plan. Every change is undoable (`⌘Z` and an Undo button in the toast), so nothing needs a confirmation dialog.
+- **The signature interaction: see every section at once.** Opening a course shows all its other sections as dashed ghosts on the calendar. Each ghost says whether it's full or overlaps something; click one to switch. Hovering a section row (or pressing `↑`/`↓`) previews it solid; `↵` switches. A one-line hint strip above the calendar explains this while it's active.
+- **Every section row answers "does it fit?"** in words: *Fits*, *Overlaps ENGL393*, *Not enough time after CMSC330*, *In your plan*. That makes search and details useful without checking the calendar.
+- **Search.** Course code, title or instructor, plus gen-ed filter buttons. Each result says how many of its sections fit your plan. No filter syntax to learn.
+- **Custom blocks.** Work, gym, lunch, "don't touch". Blocks can have a **place**, such as "Work at McKeldin" or "Dorm: Oakland Hall", so travel time includes them.
+- **Saved for later.** Courses you're considering but haven't placed, listed under the plan. The generator uses them as input.
+- **Online classes with no set time** get their own strip above the calendar, so they're visible and not forgotten.
+- **Top bar shows only credits and problem count.** Weekly walking totals were dropped: real walking depends on dorms, dining halls and everything else outside the plan.
+
+### F2. Travel time (flagship)
+User-facing name: **travel time**, not walking, so it fits everyone however they get around. The tab is "Travel", the pills say "6 min" with a route icon, and statuses are words: *Plenty of time*, *Tight*, *Not enough time*.
+
 This builds on the `dev` branch's `lib/gis.ts`, which calls UMD's own ArcGIS routing network (`gis.umd.edu/.../Navigation/DynamicRouting`, including a `DynamicRoutingAccessible` variant). That beats OSM routing, because UMD's network knows real paths, building entrances and step-free routes.
 
 - **Precompute offline, never at runtime.**
@@ -81,17 +93,18 @@ This builds on the `dev` branch's `lib/gis.ts`, which calls UMD's own ArcGIS rou
   - Each pair is shortest over *all non-emergency entrances* (layer 13). That's what your Closest Facility call already does.
   - Batch several incidents and facilities per solve, throttle to about 2 requests per second, and cache pair results forever in R2 so re-runs only fill gaps.
   - Check whether their NAServer also exposes an OD Cost Matrix solver; that would do this in far fewer calls.
-  - Store feet. Convert to minutes on the client with the user's walking pace (default 287 ft/min, as in `dev`).
+  - Store feet. Convert to minutes on the client with the user's pace (default 3.0 mph = 264 ft/min; `dev` used 287).
   - **Fallback:** if UMD's GIS changes or locks down, rebuild the matrix with OSRM's `foot` profile on OpenStreetMap. The matrix format stays the same.
 - **Joining the data.** SOC gives 3-letter codes (IRB). Testudo's `/soc/buildings/{CODE}%20{ROOM}` popup maps a code to a building number (IRB → 432). UMD's public ArcGIS `BuildingAllSearch` layer maps that number to coordinates and footprint, and GIS `LOCATIONID` uses the same number. The mapping is checked into the repo as `buildings.json`, with a failing CI check for any building code in the catalog that has no mapping.
 - **UMD's passing time:** 10 minutes on MWF (50-minute classes on the hour), 15 minutes on TuTh (75-minute classes). The app shouldn't hard-code this; it compares walk time with the *actual* gap.
 - **Features:**
-  - **Inline walk pills** between consecutive classes on the calendar, e.g. `🚶 6 min · 1,650 ft`. Green when there's time to spare, amber when tight (walk ≥ 70% of the gap), red when impossible.
-  - **Problems panel entries** such as "ESJ → Van Munching: 12 min walk, 10 min gap (Mon, Wed)".
-  - **Accessible mode** (settings) switches to the accessible matrix everywhere. Nobody else offers this, and it matters.
-  - **Pace setting:** slow, normal, brisk, or bike/scooter (a speed multiplier; biking is approximate).
-  - **Day route map:** a MapLibre map of your Tuesday, with numbered stops, walking lines between them, and total distance ("2.3 mi on Tuesdays").
-  - **Generator integration:** "no impossible walks" is a hard constraint by default, and total walking is a scoring term.
+  - **Travel pills** between back-to-back classes on the calendar ("6 min"). Neutral when there's time, amber when tight (needs ≥ 75% of the gap), red when there isn't enough time. Hover for the numbers; click for connection details.
+  - **Travel tab settings,** like the Transit app: pace (Slower 2.5 mph / Typical 3.0 / Faster 3.5), **step-free routes** (switches to the accessible matrix; ramps, elevators, accessible entrances), and extra time per trip (none, +2, +5 min).
+  - **Show the math.** The Travel tab and every connection show how the estimate was made: "IRB → TWS: 0.89 mi ÷ 264 ft/min = 18 min", plus a plain note that it doesn't know about crowds, weather or slow elevators.
+  - **Connection details:** leave/arrive times and places, distance, the estimate, the verdict ("You'd be about 8 min late"), and **sections that fix it**, each previewable on the calendar.
+  - **Problems panel entries** such as "Not enough time to get from CMSC330 to ENGL393 · 18 min needed, 10 min between classes · Mon, Wed".
+  - **Maybe later:** a simple map of one day's route. The prototype showed that a list of connections answers the real question faster than a map does.
+  - **Generator integration:** "enough time between classes" is a hard constraint by default, and travel time is a scoring term.
   - **Room-level padding:** a small constant for big buildings, such as 1 extra minute when the room is at floor 3 or higher. Room numbers encode the floor. Optional polish.
 
 ### F3. Generator
@@ -200,31 +213,20 @@ Like the problems tab in VS Code. Every item has a severity, jumps to the offend
 - **Webcal subscription** (later): `webcal://terpsicle.com/cal/<id>.ics`, so room changes flow into Google or Apple Calendar automatically. Needs a stored schedule, so it's account or short-link territory.
 - **Image export.** A PNG of the week, for group chats and Instagram stories. Registration season is a marketing moment.
 
-### F8. LLM features
-Only where a model is genuinely better than code. Almost everything runs **offline in the pipeline**, so users never wait on a model and the cost is a few dollars per term.
+### F8. LLM features (backend only)
+**No natural-language input or chat in the product.** Models only run on the backend, for work that's genuinely better done by a model, and **lazily**: on the first request for something, then cached for everyone. No bulk "summarize every professor" jobs.
 
 | Feature | When it runs | Why a model |
 |---|---|---|
-| **Review summaries** per professor × course: 2–3 sentences plus theme chips (*exams: hard*, *workload: light*, *lectures: clear*), each linked to the reviews it came from | Offline, only when new reviews arrive | Summarizing opinion text is what models are good at |
-| **Section notes → structured flags** ("Restricted to Freshmen Connection", "first 8 weeks only", "permission required", "reserved for majors") | Offline, per scrape, cached by text hash | Regex covers about 70%; the long tail is messy prose. This makes the problems panel accurate |
-| **Discovery search by meaning** ("something chill for DSHU involving film or music") | Embeddings offline; queries use a small vector index shipped with the catalog | Keyword search is bad at "vibes" and gen-ed hunting |
-| **Plain-language constraints → chips** (below) | On demand, cached | The only per-user call |
-| **Instructor name matching** across SOC and PlanetTerp ("Cliff" vs "Clifford") | Offline | Fuzzy matching handles most names; the model settles the ambiguous ones |
+| **Review summaries** per instructor (× course where there are enough reviews): 2–3 sentences plus theme tags (*clear lectures*, *hard exams*), linked back to the PlanetTerp reviews | **On demand:** the first time anyone opens that instructor. Cached, and regenerated only when an open finds new reviews since the last summary | Summarizing opinion text is what models are good at |
+| **Section notes → structured flags** ("Restricted to Freshmen Connection", "first 8 weeks only", "permission required") | Only for notes regex can't parse, cached by the note's text (the same notes repeat every term) | Regex covers most; the long tail is messy prose. This makes the problems panel accurate |
+| **Instructor name matching** across SOC and PlanetTerp ("Cliff" vs "Clifford") | Only for names fuzzy matching can't settle | Rare, ambiguous cases |
 
-Deliberately skipped: a chatbot advisor, generating schedules with a model, and grade predictions.
+Maybe later: discovery search by meaning (embeddings over course descriptions) for gen-ed hunting.
 
-**Plain-language constraints.** Turns typed text into constraints. The solver stays the source of truth; the LLM never invents a schedule.
+Deliberately skipped: natural-language constraints, a chatbot advisor, generating schedules with a model, grade predictions.
 
-- A "Describe what you want…" input at the top of Generate: *"no classes before 10, keep fridays free, I want Kruskal for 351, lunch around noon"*.
-- A server route calls a small model with **structured output** (a zod schema of our constraint types), and the result becomes **editable constraint chips**. The user sees exactly what was understood before anything runs.
-- Ambiguity becomes a clarifying chip ("'mornings' = before 12pm?").
-- "Why not?" explanations come from the solver's own relaxation data. The LLM may rephrase them but never makes the claims.
-- Guardrails:
-  - cache on a hash of the normalized prompt;
-  - Cloudflare Turnstile plus a per-IP rate limit;
-  - a hard monthly spend cap;
-  - review text is treated as untrusted input to summarization (prompt-injection-safe prompt, no tools).
-- **Cost:** about $1–15 per 10k parses with a small model. Review summaries are an offline batch job, roughly $5–10 for a full rebuild.
+Guardrails: a hard monthly spend cap; the summary endpoint is rate-limited and coalesces concurrent first requests; review text is treated as untrusted input (no tools, injection-safe prompt). While a summary is being made, the UI shows "Summarizing 88 reviews…" for a second or two.
 
 ### F9. Design system
 - **Foundation:** shadcn/ui on Radix, Tailwind 4, Geist Sans and Geist Mono (Mono for course codes, times and seat counts).
@@ -232,9 +234,8 @@ Deliberately skipped: a chatbot advisor, generating schedules with a model, and 
 - **Dark mode is first-class.**
 - **Density and motion:** 13–14px base UI text; tight, information-dense rows like Linear's issue list; motion that's fast (120–180 ms) and purposeful.
 - **Course colors:** a curated, muted palette checked for contrast in both themes and assigned consistently per course.
-- **Shortcuts:**
-  - ⌘K palette, `/` for search, `g s` for schedules, `j`/`k` through results, `e` to edit, `x` to remove, `l` to lock.
-  - Every shortcut shown in tooltips with `<kbd>`, and `?` opens a cheat sheet.
+- **Built for poking around, not power users.** People build a schedule once a semester, so every control has to be obvious on first sight. Shortcuts are a light layer on top: `/` search, `1`–`6` tabs, `↑`/`↓` preview sections, `↵` switch, `Esc` close, `⌘Z` undo. **Hovering anything that has a shortcut shows it** in the tooltip. No command palette.
+- **Data displays: words first, charts only when they're clearer.** Seats read "11 of 120 open", "2 left" or "Full · 14 waitlisted". Grades lead with a sentence ("59% got an A or B · average GPA 2.71") above five plain labeled bars. Ratings are "★ 4.6 (88)". No sparklines or unlabeled mini-charts.
 - **Skeletons and optimistic UI** everywhere; never a blocking spinner after first load.
 - **Mobile:** a *viewer* first (your schedule, today's classes, walk times, seat alerts). Full editing on mobile comes later and needs its own layout; don't squeeze the three panes onto a phone.
 
@@ -254,7 +255,7 @@ Deliberately skipped: a chatbot advisor, generating schedules with a model, and 
                                                                               seat-history/<term>/<date>.ndjson.gz
                                                                                    │
  ┌────────────────────────── browser ─────────────────────────────┐                │
- │ UI thread: React, TanStack Router, shadcn, calendar, ⌘K         │◄───────────────┘
+ │ UI thread: React, TanStack Router, shadcn, calendar             │◄───────────────┘
  │   ▲ Comlink                                                     │
  │ Web Worker: catalog + MiniSearch index + generator + linter     │
  │ IndexedDB (Dexie): catalog cache, schedules, blocks, settings   │
@@ -353,10 +354,9 @@ At UMD a section code (e.g. `0101`) usually *bundles* the lecture and discussion
 | Framework | **TanStack Start** (React 19, TS) | Typed routes and search params (URL state for filters and schedules without nuqs), SSR that's opt-in per route for the course and professor pages, first-class Cloudflare support. Still labeled RC, but the API is frozen. **Fallback:** React Router v8 framework mode (stable). Next 16 also works, but its Server Components model buys little for an app that's mostly client-side, and Vercel Hobby is non-commercial only. |
 | Hosting | **Cloudflare Workers + R2** | Static assets and R2 bandwidth are free, which matters when every user downloads a 1 MB catalog on registration day. The free plan's 10 ms CPU limit is tight for SSR: cache SSR'd course pages in the Cache API, or pay $5/mo. |
 | UI | shadcn/ui, Tailwind 4, Radix, lucide, Geist, `sonner` (toasts), `vaul` (mobile sheets) | Matches the Linear/Vercel look. |
-| Calendar | **Custom CSS grid** (~300 lines) | Calendar libraries are date-oriented and fight ghosts, overlap columns and walk pills. Port the overlap-layout idea from `app/schedule/calendar.tsx`. |
+| Calendar | **Custom CSS grid** (~300 lines) | Calendar libraries are date-oriented and fight ghosts, overlap columns and travel pills. Port the overlap-layout idea from `app/schedule/calendar.tsx`. |
 | Drag and drop | pragmatic-drag-and-drop | Later. Click-to-swap covers most of what DnD would. |
-| ⌘K | shadcn `Command` (cmdk) | |
-| Search | **MiniSearch** in the worker (fuzzy + prefix, field boosts), plus **uFuzzy** for code and title ranking in ⌘K | Orama if we want built-in facets. |
+| Search | **MiniSearch** in the worker (fuzzy + prefix, field boosts), plus **uFuzzy** for ranking short code/title matches | Orama if we want built-in facets. |
 | Worker | Comlink + a module worker | Generator, search, linter. |
 | Client data | TanStack Query (catalog, seats), Dexie + `useLiveQuery` (user data), Zustand (ephemeral UI state) | |
 | Map | MapLibre GL + Protomaps PMTiles on R2 | Free, no API keys. Style it to match the theme. |
@@ -392,7 +392,10 @@ The generator in `dev`'s `lib/generate.ts` does a full cartesian product and the
 1. Hosting: **Cloudflare** (Workers + R2, D1 only for the little server state we have).
 2. Data: **no Jupiterp data**. **PlanetTerp is fine.**
 3. Accounts: **none at launch.** Seat alerts get the lightest possible auth: a Web Push subscription or an email magic link, with no passwords and no profile.
-4. LLM features: the short list in F8, mostly offline.
+4. LLM features: backend only, lazy and cached (F8). No natural-language input in the product.
+5. Travel time, not walking. Pace, step-free and buffer settings with the math shown. No weekly walking total.
+6. Details open in one place, and there's no permanent right panel. Which pattern is TBD (prototype round 2).
+7. No command palette. Light shortcuts, shown on hover.
 
 **Still open**
 - LLM budget cap (suggest $20/mo to start).
@@ -417,11 +420,11 @@ Each phase ends shippable. Rough sizes assume a solo developer working with an A
 - [ ] Walk-matrix builder (UMD GIS, standard and accessible), cached in R2.
 
 **Phase 1: The builder (≈2–3 weeks)**, which makes it usable on its own: F1, F2 (pills and warnings), and part of F5
-- [ ] App shell: three panes, icon rail, inspector, ⌘K.
+- [ ] App shell: top bar with plans, labeled rail, one sidebar panel, calendar; details per the round-2 decision.
 - [ ] Catalog load → IndexedDB → worker; MiniSearch with filter syntax.
 - [ ] Calendar grid: overlap layout, hover ghosts, click-to-swap, custom blocks with locations.
-- [ ] Schedules in Dexie; header stats.
-- [ ] Walk pills; Problems panel (overlaps, walks, full sections, restricted, async).
+- [ ] Plans in Dexie (rename, duplicate, delete, undo).
+- [ ] Travel pills and settings; Problems panel (overlaps, travel time, full sections, restricted, async).
 - [ ] Share links and friend overlay.
 
 **Phase 2: The generator (≈2 weeks)**: F3
@@ -444,8 +447,7 @@ Each phase ends shippable. Rough sizes assume a solo developer working with an A
 - [ ] Seat alerts (Web Push or email magic link + D1; the first backend state, with no full accounts).
 
 **Phase 5: AI and social (ongoing)**: F8, sync, webcal
-- [ ] Natural-language constraints → chips.
-- [ ] Review summaries, if PlanetTerp permission is granted.
+- [ ] On-demand review summaries (first open, cached).
 - [ ] Cross-device sync, webcal subscriptions, short links.
 - [ ] Mobile viewer polish, PWA install.
 

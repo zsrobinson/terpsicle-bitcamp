@@ -1,91 +1,137 @@
-// PROTOTYPE state: in-memory only, shared by every variant so switching keeps your schedule.
+// PROTOTYPE state: in-memory only, shared by every variant so switching keeps your plans.
 import { createContext, useContext, useReducer, type ReactNode } from "react";
+import { DEFAULT_TRAVEL, type TravelSettings } from "./core";
 import { DEFAULT_CART, DEFAULT_SCHEDULE, SECTION_BY_ID, type Block } from "./data";
 
-export type Schedule = { id: string; name: string; sections: string[]; blocks: Block[] };
+export type Plan = { id: string; name: string; sections: string[]; blocks: Block[] };
+export type Tab = "plan" | "search" | "problems" | "travel" | "blocks" | "export";
+export type Detail = { kind: "course"; code: string } | { kind: "leg"; key: string } | null;
+export type Anchor = { x: number; y: number; w: number; h: number } | null;
 
 export type State = {
-  schedules: Schedule[];
+  plans: Plan[];
   activeId: string;
-  cart: string[];
-  selectedCourse: string | null;
-  hover: string | null;
-  accessible: boolean;
-  pace: number;
-  paletteOpen: boolean;
-  toast: { id: number; text: string } | null;
+  shortlist: string[];
+  tab: Tab;
+  detail: Detail;
+  anchor: Anchor;
+  preview: string | null;
+  travel: TravelSettings;
+  past: { plans: Plan[]; activeId: string; shortlist: string[] }[];
+  toast: { id: number; text: string; undo?: boolean } | null;
 };
 
 export type Action =
   | { type: "add"; section: string }
   | { type: "remove"; course: string }
-  | { type: "select"; course: string | null }
-  | { type: "hover"; section: string | null }
+  | { type: "open"; detail: Detail; anchor?: Anchor }
+  | { type: "close" }
+  | { type: "preview"; section: string | null }
+  | { type: "tab"; tab: Tab }
   | { type: "setActive"; id: string }
-  | { type: "cart"; course: string; on: boolean }
-  | { type: "accessible" }
-  | { type: "pace"; pace: number }
-  | { type: "palette"; open: boolean }
-  | { type: "apply"; sections: string[]; name?: string }
+  | { type: "newPlan" }
+  | { type: "renamePlan"; id: string; name: string }
+  | { type: "duplicatePlan"; id: string }
+  | { type: "deletePlan"; id: string }
+  | { type: "shortlist"; course: string; on: boolean }
+  | { type: "travel"; patch: Partial<TravelSettings> }
   | { type: "removeBlock"; id: string }
+  | { type: "undo" }
   | { type: "toast"; text: string };
 
 const init: State = {
-  schedules: [
+  plans: [
     { id: "a", name: "Plan A", ...DEFAULT_SCHEDULE },
     { id: "b", name: "Plan B", sections: ["CMSC351-0301", "CMSC330-0201", "STAT400-0101", "ENGL393-0404", "ECON200-0101"], blocks: DEFAULT_SCHEDULE.blocks },
   ],
   activeId: "a",
-  cart: DEFAULT_CART,
-  selectedCourse: null,
-  hover: null,
-  accessible: false,
-  pace: 1,
-  paletteOpen: false,
+  shortlist: DEFAULT_CART,
+  tab: "plan",
+  detail: null,
+  anchor: null,
+  preview: null,
+  travel: DEFAULT_TRAVEL,
+  past: [],
   toast: null,
 };
 
 let toastId = 0;
+let planSeq = 3;
+const nextName = (plans: Plan[]) => {
+  for (const L of "ABCDEFGHIJ") if (!plans.some((p) => p.name === `Plan ${L}`)) return `Plan ${L}`;
+  return `Plan ${planSeq++}`;
+};
+
 function reducer(s: State, a: Action): State {
-  const active = s.schedules.find((x) => x.id === s.activeId)!;
-  const patch = (fn: (sch: Schedule) => Schedule) => ({ ...s, schedules: s.schedules.map((x) => (x.id === s.activeId ? fn(x) : x)) });
-  const toast = (text: string) => ({ id: ++toastId, text });
+  const active = s.plans.find((x) => x.id === s.activeId)!;
+  // Every change to plans is undoable; that's how we avoid "are you sure?" dialogs.
+  const commit = (next: Partial<State>, text: string): State => ({
+    ...s, ...next,
+    past: [...s.past.slice(-30), { plans: s.plans, activeId: s.activeId, shortlist: s.shortlist }],
+    toast: { id: ++toastId, text, undo: true },
+  });
+  const patchActive = (fn: (p: Plan) => Plan) => s.plans.map((x) => (x.id === s.activeId ? fn(x) : x));
   switch (a.type) {
     case "add": {
-      const course = SECTION_BY_ID[a.section].course;
-      const had = active.sections.find((id) => SECTION_BY_ID[id].course === course);
-      const next = patch((x) => ({ ...x, sections: [...x.sections.filter((id) => SECTION_BY_ID[id].course !== course), a.section] }));
-      return { ...next, hover: null, cart: s.cart.filter((c) => c !== course), toast: toast(had ? `Swapped ${course} to ${a.section.split("-")[1]}` : `Added ${a.section}`) };
+      const sec = SECTION_BY_ID[a.section];
+      const had = active.sections.find((id) => SECTION_BY_ID[id].course === sec.course);
+      return {
+        ...commit({ plans: patchActive((p) => ({ ...p, sections: [...p.sections.filter((id) => SECTION_BY_ID[id].course !== sec.course), a.section] })), shortlist: s.shortlist.filter((c) => c !== sec.course) },
+          had ? `Switched ${sec.course} to section ${sec.code}` : `Added ${sec.course} ${sec.code} to ${active.name}`),
+        preview: null,
+      };
     }
     case "remove":
-      return { ...patch((x) => ({ ...x, sections: x.sections.filter((id) => SECTION_BY_ID[id].course !== a.course) })), selectedCourse: null, cart: s.cart.includes(a.course) ? s.cart : [...s.cart, a.course], toast: toast(`Moved ${a.course} back to your cart`) };
+      return { ...commit({ plans: patchActive((p) => ({ ...p, sections: p.sections.filter((id) => SECTION_BY_ID[id].course !== a.course) })), shortlist: [...new Set([...s.shortlist, a.course])] }, `Removed ${a.course} from ${active.name}`), detail: null };
     case "removeBlock":
-      return patch((x) => ({ ...x, blocks: x.blocks.filter((b) => b.id !== a.id) }));
-    case "select":
-      return { ...s, selectedCourse: a.course };
-    case "hover":
-      return s.hover === a.section ? s : { ...s, hover: a.section };
+      return commit({ plans: patchActive((p) => ({ ...p, blocks: p.blocks.filter((b) => b.id !== a.id) })) }, "Removed block");
+    case "open":
+      return { ...s, detail: a.detail, anchor: a.anchor ?? null, preview: null };
+    case "close":
+      return { ...s, detail: null, anchor: null, preview: null };
+    case "preview":
+      return s.preview === a.section ? s : { ...s, preview: a.section };
+    case "tab":
+      return { ...s, tab: a.tab, detail: null, anchor: null };
     case "setActive":
-      return { ...s, activeId: a.id, selectedCourse: null };
-    case "cart":
-      return { ...s, cart: a.on ? [...new Set([...s.cart, a.course])] : s.cart.filter((c) => c !== a.course), toast: a.on ? toast(`${a.course} added to cart`) : s.toast };
-    case "accessible":
-      return { ...s, accessible: !s.accessible, toast: toast(!s.accessible ? "Using step-free routes" : "Using standard routes") };
-    case "pace":
-      return { ...s, pace: a.pace };
-    case "palette":
-      return { ...s, paletteOpen: a.open };
-    case "apply":
-      return { ...patch((x) => ({ ...x, sections: a.sections })), toast: toast(`Applied to ${active.name}`) };
+      return { ...s, activeId: a.id, detail: null, anchor: null };
+    case "newPlan": {
+      const id = "p" + planSeq++;
+      return { ...commit({ plans: [...s.plans, { id, name: nextName(s.plans), sections: [], blocks: [] }], activeId: id }, "Created an empty plan"), detail: null };
+    }
+    case "duplicatePlan": {
+      const src = s.plans.find((p) => p.id === a.id)!;
+      const id = "p" + planSeq++;
+      const i = s.plans.indexOf(src);
+      const plans = [...s.plans.slice(0, i + 1), { ...src, id, name: `${src.name} copy` }, ...s.plans.slice(i + 1)];
+      return commit({ plans, activeId: id }, `Duplicated ${src.name}`);
+    }
+    case "renamePlan":
+      return { ...s, plans: s.plans.map((p) => (p.id === a.id ? { ...p, name: a.name.trim() || p.name } : p)) };
+    case "deletePlan": {
+      if (s.plans.length === 1) return s;
+      const i = s.plans.findIndex((p) => p.id === a.id);
+      const plans = s.plans.filter((p) => p.id !== a.id);
+      return { ...commit({ plans, activeId: s.activeId === a.id ? plans[Math.max(0, i - 1)].id : s.activeId }, `Deleted ${s.plans[i].name}`), detail: null };
+    }
+    case "shortlist":
+      return commit({ shortlist: a.on ? [...new Set([...s.shortlist, a.course])] : s.shortlist.filter((c) => c !== a.course) }, a.on ? `Saved ${a.course} for later` : `Removed ${a.course} from saved`);
+    case "travel":
+      return { ...s, travel: { ...s.travel, ...a.patch } };
+    case "undo": {
+      const prev = s.past[s.past.length - 1];
+      if (!prev) return s;
+      return { ...s, ...prev, past: s.past.slice(0, -1), toast: { id: ++toastId, text: "Undone" } };
+    }
     case "toast":
-      return { ...s, toast: toast(a.text) };
+      return { ...s, toast: { id: ++toastId, text: a.text } };
   }
 }
 
-const Ctx = createContext<{ s: State; d: (a: Action) => void; active: Schedule } | null>(null);
+const Ctx = createContext<{ s: State; d: (a: Action) => void; active: Plan } | null>(null);
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [s, d] = useReducer(reducer, init);
-  const active = s.schedules.find((x) => x.id === s.activeId)!;
+  const active = s.plans.find((x) => x.id === s.activeId)!;
   return <Ctx.Provider value={{ s, d, active }}>{children}</Ctx.Provider>;
 }
 export const useStore = () => useContext(Ctx)!;
