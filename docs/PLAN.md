@@ -1,4 +1,6 @@
-# Terpsicle v2: plan
+# Terpsicle v2: plan (research history)
+
+> **Superseded.** The final product decisions are in [`SPEC.md`](SPEC.md) and the engineering plan is in [`BUILD.md`](BUILD.md). This document is kept for its research and sources; where it disagrees with those, they win.
 
 > The class scheduler the original Terpsicle was supposed to be. No degree audit, nothing CS-specific.
 > Written 2026-09-25, based on the original Excalidraw brainstorm (appendix A), the `dev` branch, and research into UMD data sources, other schools' schedulers, and the current tooling. Research sources are in appendix B.
