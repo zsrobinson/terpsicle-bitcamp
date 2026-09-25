@@ -47,7 +47,7 @@ Matching Jupiterp isn't enough. We win on:
 | **Final exams** | Exam-clash detection from registrar data | Nobody |
 | **Natural language** | "No classes before 10, Fridays off, at most one walk under 10 minutes" becomes editable constraint chips | Nobody at UMD |
 
-Consider reaching out to the Jupiterp maintainers before launch. Sharing data, especially their grades API, beats scraping the same sources twice, and UMD is a small community.
+**Decided:** we use no Jupiterp data or code; everything comes from our own scrapers. PlanetTerp is fine to use (ratings, reviews, grades).
 
 ---
 
@@ -200,8 +200,20 @@ Like the problems tab in VS Code. Every item has a severity, jumps to the offend
 - **Webcal subscription** (later): `webcal://terpsicle.com/cal/<id>.ics`, so room changes flow into Google or Apple Calendar automatically. Needs a stored schedule, so it's account or short-link territory.
 - **Image export.** A PNG of the week, for group chats and Instagram stories. Registration season is a marketing moment.
 
-### F8. Natural language
-Turns typed text into constraints. The solver stays the source of truth; the LLM never invents a schedule.
+### F8. LLM features
+Only where a model is genuinely better than code. Almost everything runs **offline in the pipeline**, so users never wait on a model and the cost is a few dollars per term.
+
+| Feature | When it runs | Why a model |
+|---|---|---|
+| **Review summaries** per professor × course: 2–3 sentences plus theme chips (*exams: hard*, *workload: light*, *lectures: clear*), each linked to the reviews it came from | Offline, only when new reviews arrive | Summarizing opinion text is what models are good at |
+| **Section notes → structured flags** ("Restricted to Freshmen Connection", "first 8 weeks only", "permission required", "reserved for majors") | Offline, per scrape, cached by text hash | Regex covers about 70%; the long tail is messy prose. This makes the problems panel accurate |
+| **Discovery search by meaning** ("something chill for DSHU involving film or music") | Embeddings offline; queries use a small vector index shipped with the catalog | Keyword search is bad at "vibes" and gen-ed hunting |
+| **Plain-language constraints → chips** (below) | On demand, cached | The only per-user call |
+| **Instructor name matching** across SOC and PlanetTerp ("Cliff" vs "Clifford") | Offline | Fuzzy matching handles most names; the model settles the ambiguous ones |
+
+Deliberately skipped: a chatbot advisor, generating schedules with a model, and grade predictions.
+
+**Plain-language constraints.** Turns typed text into constraints. The solver stays the source of truth; the LLM never invents a schedule.
 
 - A "Describe what you want…" input at the top of Generate: *"no classes before 10, keep fridays free, I want Kruskal for 351, lunch around noon"*.
 - A server route calls a small model with **structured output** (a zod schema of our constraint types), and the result becomes **editable constraint chips**. The user sees exactly what was understood before anything runs.
@@ -236,7 +248,7 @@ Turns typed text into constraints. The solver stays the source of truth; the LLM
  Registrar   ──►│   courses/sections/exams/calendar                    │
  PlanetTerp  ──►│ join ratings/grades                                   │──► R2 (static, CDN)
  UMD GIS     ──►│ building map + walk matrices (per term, offline)      │     manifest.json
- (LLM batch) ──►│ review summaries (offline, incremental)               │     catalog.<term>.<hash>.json.br
+ (LLM batch) ──►│ review summaries (offline, incremental)               │     catalog/<term>/<DEPT>.<hash>.json
                 └───────────────────────────────────────────────────────┘     seats.<term>.json (ETag, 60s)
                                                                               walk.<hash>.bin, buildings.json
                                                                               seat-history/<term>/<date>.ndjson.gz
@@ -257,6 +269,13 @@ Turns typed text into constraints. The solver stays the source of truth; the LLM
   - One writer (the scraper), many readers.
   - A whole term is ~4.7k courses and ~12–15k sections: roughly 5–8 MB of JSON, about 1 MB brotli-compressed in a compact column-oriented layout.
   - Clients download it once per term, where it is served as immutable, content-hashed files. After that they poll only `seats.<term>.json` (about 100 KB) with `If-None-Match`.
+- **The catalog is versioned and updates incrementally**, because "mostly static" still means rooms change, sections get added and cancelled, and TBA instructors get named.
+  - The scraper splits the catalog into **per-department files named by content hash**: `catalog/202701/CMSC.3f9a1c.json`. They are immutable forever, and an unchanged department keeps its filename.
+  - `manifest.json` is tiny, cached for 60 s with an ETag, and lists `{ schemaVersion, term, generatedAt, chunks: { CMSC: "3f9a1c", … }, seats: "<hash>" }`.
+  - On load, tab focus and a timer, the client fetches the manifest (usually a 304), diffs chunk hashes against what's in IndexedDB, and downloads **only the departments that changed**. A room change in CMSC costs about 20 KB.
+  - Bumping `schemaVersion` forces a clean full re-download.
+  - Each saved schedule keeps a snapshot of its sections' meetings. When a new catalog arrives, the linter diffs them and surfaces changes ("CMSC351-0201 moved TuTh 9:30 → 11:00", "ENGL393-0304 was cancelled").
+  - The same diff, run server-side, produces a public "what changed today" feed.
   - A database would be a poor fit: D1's free tier allows 100k row writes a day, and upserting seats every 5 minutes is about 7M.
 - **All computation happens client-side in a worker.** Search, the linter and the generator all run against the local catalog, which makes the app instant, work offline, and cost nothing per user.
 - **Normalized schema with pluggable source adapters.** UMD is moving to **Workday Student ("Elevate")**:
@@ -360,21 +379,25 @@ The generator in `dev`'s `lib/generate.ts` does a full cartesian product and the
 
 | Risk | Mitigation |
 |---|---|
-| Testudo markup changes | Zod validation, a publish gate, golden fixtures, alerting. Jupiterp's API is an emergency fallback for seats (with permission). |
+| Testudo markup changes | Zod validation, a publish gate (the last good snapshot stays live), golden fixtures, alerting. |
 | **Workday replaces SOC in spring 2028** | The adapter seam (§4). Start watching Workday's public course search in fall 2027, during Elevate's mock semester. |
 | UMD GIS token or endpoint changes | The matrix is precomputed and cached forever, with the OSRM/OSM fallback. |
-| PlanetTerp terms (the compilation is claimed as their property) | Email them before launch. Link out rather than rehost review text. Summaries only with permission. |
-| Grade data licensing | Registrar MPIA data is public record. Ask Jupiterp or PlanetTerp, or request it ourselves. |
+| PlanetTerp terms (the compilation is claimed as their property) | Decided: we're OK using it. Still a courtesy email before launch, link back to reviews, cache politely. |
+| Grade data freshness | PlanetTerp grades stop at Spring 2025. Registrar MPIA data is public record, so file our own request for newer terms. |
 | GitHub Actions cron lag at registration | Workers Paid cron ($5/mo) for seats during windows. |
 | LLM abuse or cost | Turnstile, rate limits, a caching layer, a spend cap. The feature degrades gracefully to plain chips. |
-| Being "another Jupiterp" | Lead with walking, the linter, registration-day tooling and polish. Consider collaborating instead of competing. |
+| Being "another Jupiterp" | Lead with walking, the linter, registration-day tooling and polish. |
 
-**Your decisions** (my recommendation in bold):
-1. Hosting: **Cloudflare**, or Vercel (you like its ecosystem, but Hobby is non-commercial and has daily-only cron).
-2. Reach out to Jupiterp and PlanetTerp before building on their data? **Yes.**
-3. Accounts at launch? **No.** URL sharing plus local data. Add accounts with alerts in phase 4.
-4. LLM budget cap: **$20/mo** to start.
-5. Domain: terpsicle.com (from the brainstorm). Still available/owned?
+**Decisions (2026-09-25)**
+1. Hosting: **Cloudflare** (Workers + R2, D1 only for the little server state we have).
+2. Data: **no Jupiterp data**. **PlanetTerp is fine.**
+3. Accounts: **none at launch.** Seat alerts get the lightest possible auth: a Web Push subscription or an email magic link, with no passwords and no profile.
+4. LLM features: the short list in F8, mostly offline.
+
+**Still open**
+- LLM budget cap (suggest $20/mo to start).
+- Domain: terpsicle.com. Still owned?
+- Which app-shell variant wins (see `prototypes/app-shell`).
 
 ---
 
@@ -418,7 +441,7 @@ Each phase ends shippable. Rough sizes assume a solo developer working with an A
 **Phase 4: Registration day (≈2 weeks, timed before registration opens)**: F6
 - [ ] Faster seat cron, freshness UI, seat history ingest, fill-speed sparklines.
 - [ ] Plan B generator; copy codes.
-- [ ] Seat alerts (Web Push + D1, first backend state; Better Auth anonymous → account).
+- [ ] Seat alerts (Web Push or email magic link + D1; the first backend state, with no full accounts).
 
 **Phase 5: AI and social (ongoing)**: F8, sync, webcal
 - [ ] Natural-language constraints → chips.
