@@ -1,5 +1,17 @@
 # Prototype: app shell (throwaway)
 
+## Round 3: final design review
+
+`review.html` is a review page: one open question per screen, each option previewed live in the
+Drill-in app (round 2, variant 1) with only that one design field changed (`src/review/design.ts`).
+Answers are saved to the artifact's database (collection `answers`, one doc per question).
+
+```sh
+npm run dev:review     # opens /review.html
+npm run build:review   # dist-review/review.html + dist-review/artifact.html
+```
+
+
 ## Round 2 (current)
 
 **Question:** in the Workbench layout, *where should details open* so people always know where to look?

@@ -82,12 +82,13 @@ export function usePlanInfo() {
 }
 
 // ================= global keys =================
-export function useAppKeys() {
+export function useAppKeys(tabOrder?: string[]) {
   const { s, d } = useStore();
   const ref = useRef(s);
   ref.current = s;
+  const order = (tabOrder ?? ["plan", "search", "problems", "travel", "blocks", "export"]).join(",");
   useEffect(() => {
-    const tabs: Tab[] = ["plan", "search", "problems", "travel", "blocks", "export"];
+    const tabs = order.split(",") as Tab[];
     const h = (e: KeyboardEvent) => {
       const s = ref.current;
       const typing = (e.target as HTMLElement).closest("input, textarea, [contenteditable]");
@@ -95,7 +96,7 @@ export function useAppKeys() {
       if (e.key === "Escape") { (e.target as HTMLElement).blur?.(); d({ type: "close" }); return; }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "/") { e.preventDefault(); d({ type: "tab", tab: "search" }); setTimeout(() => document.getElementById("search-input")?.focus(), 0); return; }
-      if (/^[1-6]$/.test(e.key)) { d({ type: "tab", tab: tabs[+e.key - 1] }); return; }
+      if (/^[1-9]$/.test(e.key) && tabs[+e.key - 1]) { d({ type: "tab", tab: tabs[+e.key - 1] }); return; }
       if (s.detail?.kind === "course" && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
         e.preventDefault();
         const secs = sectionsOf(s.detail.code).filter((x) => x.meetings.length);
@@ -109,7 +110,7 @@ export function useAppKeys() {
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
-  }, [d]);
+  }, [d, order]);
 }
 
 // ================= top bar with plans =================

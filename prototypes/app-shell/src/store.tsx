@@ -18,6 +18,7 @@ export type State = {
   preview: string | null;
   travel: TravelSettings;
   past: { plans: Plan[]; activeId: string; shortlist: string[] }[];
+  watching: string[];
   toast: { id: number; text: string; undo?: boolean } | null;
 };
 
@@ -37,6 +38,10 @@ export type Action =
   | { type: "travel"; patch: Partial<TravelSettings> }
   | { type: "removeBlock"; id: string }
   | { type: "undo" }
+  | { type: "addBlock"; block: Block }
+  | { type: "watch"; section: string }
+  | { type: "planFrom"; sections: string[]; name: string }
+  | { type: "setSections"; sections: string[] }
   | { type: "toast"; text: string };
 
 const init: State = {
@@ -52,6 +57,7 @@ const init: State = {
   preview: null,
   travel: DEFAULT_TRAVEL,
   past: [],
+  watching: [],
   toast: null,
 };
 
@@ -125,12 +131,22 @@ function reducer(s: State, a: Action): State {
     }
     case "toast":
       return { ...s, toast: { id: ++toastId, text: a.text } };
+    case "addBlock":
+      return commit({ plans: patchActive((p) => ({ ...p, blocks: [...p.blocks, a.block] })) }, `Added “${a.block.label}”`);
+    case "watch":
+      return { ...s, watching: s.watching.includes(a.section) ? s.watching.filter((x) => x !== a.section) : [...s.watching, a.section], toast: { id: ++toastId, text: s.watching.includes(a.section) ? "Stopped watching" : "We'll email you when a seat opens" } };
+    case "setSections":
+      return { ...commit({ plans: patchActive((p) => ({ ...p, sections: a.sections })) }, `Updated ${active.name}`), detail: null };
+    case "planFrom": {
+      const id = "p" + planSeq++;
+      return { ...commit({ plans: [...s.plans, { id, name: a.name, sections: a.sections, blocks: active.blocks }], activeId: id }, `Saved as ${a.name}`), detail: null };
+    }
   }
 }
 
 const Ctx = createContext<{ s: State; d: (a: Action) => void; active: Plan } | null>(null);
-export function StoreProvider({ children }: { children: ReactNode }) {
-  const [s, d] = useReducer(reducer, init);
+export function StoreProvider({ children, initial }: { children: ReactNode; initial?: Partial<State> }) {
+  const [s, d] = useReducer(reducer, { ...init, ...initial });
   const active = s.plans.find((x) => x.id === s.activeId)!;
   return <Ctx.Provider value={{ s, d, active }}>{children}</Ctx.Provider>;
 }

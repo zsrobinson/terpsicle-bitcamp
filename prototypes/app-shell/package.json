@@ -4,7 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/to-artifact.mjs"
+    "build": "vite build && node scripts/to-artifact.mjs",
+    "dev:review": "vite --open /review.html",
+    "build:review": "vite build --config vite.review.config.ts && node scripts/to-artifact.mjs dist-review/review.html dist-review/artifact.html"
   },
   "dependencies": {
     "clsx": "^2.1.1",

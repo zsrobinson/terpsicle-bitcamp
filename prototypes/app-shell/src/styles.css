@@ -135,3 +135,6 @@ body {
 @keyframes slide-in-right { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
 .slide-in-right { animation: slide-in-right 160ms cubic-bezier(.2,.8,.2,1); }
 @media (prefers-reduced-motion: reduce) { .slide-in, .slide-in-right { animation: none; } }
+/* review: accent options */
+.accent-black { --accent: var(--fg); --accent-fg: var(--bg); --accent-soft: color-mix(in oklab, var(--fg) 7%, transparent); }
+.accent-blue { --accent: #2f6fed; --accent-fg: #ffffff; --accent-soft: rgba(47, 111, 237, 0.1); }
